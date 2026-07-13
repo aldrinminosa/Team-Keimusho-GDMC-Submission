@@ -1,40 +1,5 @@
 
 """
-GDMC Multi-Tribe World Generator V37
-
-World mode for large build areas such as 1000x1000:
-- Scans the full build area in biome tiles instead of treating it as one tribe.
-- Detects large connected Plains, Desert, Savanna, and Taiga regions.
-- Selects one deep, high-purity site per available tribe by default.
-- Generates each settlement inside an isolated local sub-area.
-- Prevents buildings, roads, decorations, and wall supports from crossing into
-  another tribe's biome.
-- Uses the correct landmark, building folder, road style, wall library, banners,
-  NBT structures, saved mobs, and configured villagers for every tribe.
-- Forms and seals the complete settlement terrain before selecting or placing buildings.
-- Fills ravines and shallow cave openings, smooths mountains, and preserves untouched trees.
-- Caps each settlement at a safe number of repeatable buildings for performance.
-- Continues to the next tribe if one selected settlement cannot be generated.
-- Keeps every settlement wall contour connected, including across water.
-- Drains enclosed water and fills road/wall subgrades with biome ground.
-- Detects mountain mass inside each settlement, cuts it into broad grass-covered terraces,
-  and generates buildings, roads, and walls from the regraded terrain.
-- Gently terraces the complete settlement interior instead of deeply cutting each plot.
-- Uses fill-first grass terrain, covers local holes/cave mouths, and preserves untouched trees.
-- Places wall modules above terrain and fills supports instead of excavating hillsides.
-- Reclaims water during terrain formation and packs every wall-over-water footprint to solid biome ground.
-- Removes the complete logs-and-leaves structure of any natural tree damaged by terrain cuts.
-- Removes complete trees intersecting building footprints and local structure-clearance margins.
-- Clears every terrain-cut and building-clearance column upward to the build-area sky limit.
-- Plans the final buildings first, then reforms only an organic settlement footprint.
-- Removes trees as whole trunk-based components and assigns leaves to their nearest tree.
-- Replants biome-matched saplings in verified open spaces after settlement completion and immediately attempts to grow them.
-- Places wall contours 5-8 blocks from outer structures, inside the formed terrain.
-- Prevents the fallback connector wall from becoming a second parallel wall beside modules.
-- Locks every road branch to the exact saved Y level of both connected building waypoints.
-
-Single-tribe mode remains available.
-
 Requirements:
     pip install requests
 
@@ -82,100 +47,233 @@ DIMENSION = "overworld"
 
 SEED = 20260605
 
-
-# ============================================================
-# MAIN SETTINGS
-# Edit this section to control every tribe from one place.
-# ============================================================
-# Building rules:
-# - building_total = None: the values in building_ratios are exact copy counts.
-#   The default {"*": 1} therefore generates one copy of every normal type.
-# - building_total = an integer: building_ratios become relative weights whose
-#   final counts add up to that total. Positive types receive at least one copy
-#   when the requested total is large enough.
-# - Ratio keys may be a full filename, filename stem, exported asset name, or a
-#   distinctive filename fragment. "*" is the fallback for unmatched types.
-#
-# Example for a 12-building Plains settlement:
-#   "building_total": 12,
-#   "building_ratios": {"house": 4, "farm": 2, "storage": 1, "*": 1},
-#
-# Wall patterns use the generated banner/light variants. Repeating
-# ["banner", "light", "light"] displays one banner every three modules.
 TRIBE_GENERATION_SETTINGS: Dict[str, Dict[str, Any]] = {
+    # Exact-count tribes use building_groups so a count is shared across all
+    # matching JSON/NBT variants. Example: two animal-pen files still produce
+    # five pens TOTAL, not five copies of each file.
     "plains": {
         "building_total": None,
-        "building_ratios": {"*": 1},
-        "ensure_each_type": True,
-        "building_spacing": 4,
-        "compact_radius": 48,
-        "maximum_radius": 72,
-        "radius_step": 8,
-        "cluster_link_distance": 22,
-        "terrain_score_weight": 0.35,
-        "nearest_building_weight": 11.0,
-        "bounds_growth_weight": 0.20,
-        "landmark_distance_weight": 0.55,
-        "world_safety_cap": 48,
+        "building_ratios": {"*": 0},
+        "building_groups": [
+            {
+                "name": "animal_pens",
+                "total": 5,
+                "patterns": ["animalpen", "pigpen", "cowpen", "sheeppen"],
+                "exclude_patterns": ["camel", "horse"],
+            },
+            {"name": "blacksmith", "total": 2, "patterns": ["blacksmith"]},
+            {"name": "farm", "total": 2, "patterns": ["farm"]},
+            {"name": "fountain", "total": 3, "patterns": ["fountain"]},
+            {
+                "name": "horse_stable",
+                "total": 2,
+                "patterns": ["horsestable", "horsesteed", "horsepen"],
+            },
+            {"name": "librarian_house", "total": 2, "patterns": ["librarian"]},
+            {"name": "market", "total": 2, "patterns": ["market"]},
+            {"name": "towerhouse", "total": 2, "patterns": ["towerhouse"]},
+            {"name": "wheathouse", "total": 2, "patterns": ["wheathouse"]},
+        ],
+        "ensure_each_type": False,
+        "building_spacing": 3,
+        "compact_radius": 46,
+        "maximum_radius": 66,
+        "radius_step": 4,
+        "cluster_link_distance": 14,
+        "terrain_score_weight": 0.20,
+        "nearest_building_weight": 18.0,
+        "bounds_growth_weight": 0.55,
+        "landmark_distance_weight": 0.80,
+        "building_max_flatten": 9,
+        "relaxed_building_max_flatten": 13,
+        "world_safety_cap": 40,
+        "generate_walls": True,
+        "wall_margin": 6,
         "wall_building_clearance": 1,
+        "wall_fallback_height": 4,
+        "wall_fallback_block": "minecraft:stone_bricks",
+        "wall_max_outward_overhang": 4,
+        "wall_special_max_relief": 3,
+        "wall_special_max_fill_depth": 3,
+        "gate_require_access_before_placement": True,
         "straight_wall_pattern": ["banner", "light", "light"],
         "oblique_wall_pattern": ["light", "light", "light", "banner"],
+        "connect_buildings_to_nearest_road": True,
+        "entrance_corridor_width": 1,
+        "entrance_corridor_extra_outside": 0,
+        "generate_gate_roads": True,
+        "gate_accessibility_check": True,
+        "gate_min_outside_distance": 8,
+        "gate_max_outside_distance": 18,
+        "gate_max_step": 3,
+        "gate_max_relief": 10,
+        "terrain_form_first": False,
+        "same_y_level": True,
+        "organic_blend_width": 20,
+        "cleanup_hanging_vegetation": True,
     },
     "desert": {
         "building_total": None,
-        "building_ratios": {"*": 1},
-        "ensure_each_type": True,
-        "building_spacing": 4,
-        "compact_radius": 48,
-        "maximum_radius": 72,
-        "radius_step": 8,
-        "cluster_link_distance": 22,
-        "terrain_score_weight": 0.35,
-        "nearest_building_weight": 11.0,
-        "bounds_growth_weight": 0.20,
-        "landmark_distance_weight": 0.55,
-        "world_safety_cap": 48,
+        "building_ratios": {"*": 0},
+        "building_groups": [
+            {
+                "name": "animal_pens",
+                "total": 5,
+                "patterns": ["animalpen", "pigpen", "cowpen", "sheeppen"],
+                "exclude_patterns": ["camel", "horse"],
+            },
+            {"name": "big_house", "total": 2, "patterns": ["bighouse"]},
+            {"name": "blacksmith", "total": 2, "patterns": ["blacksmith"]},
+            {"name": "cactus_house", "total": 2, "patterns": ["cactushouse"]},
+            {"name": "camel_pen", "total": 2, "patterns": ["camelpen"]},
+            {"name": "farm", "total": 2, "patterns": ["farm"]},
+            {"name": "market", "total": 2, "patterns": ["market"]},
+            {"name": "tower", "total": 3, "patterns": ["tower"]},
+            {"name": "well", "total": 2, "patterns": ["well"]},
+        ],
+        "ensure_each_type": False,
+        "building_spacing": 3,
+        "compact_radius": 46,
+        "maximum_radius": 66,
+        "radius_step": 4,
+        "cluster_link_distance": 14,
+        "terrain_score_weight": 0.20,
+        "nearest_building_weight": 18.0,
+        "bounds_growth_weight": 0.55,
+        "landmark_distance_weight": 0.80,
+        "building_max_flatten": 9,
+        "relaxed_building_max_flatten": 13,
+        "world_safety_cap": 40,
+        "generate_walls": True,
+        "wall_margin": 6,
         "wall_building_clearance": 1,
+        "wall_fallback_height": 4,
+        "wall_fallback_block": "minecraft:cut_sandstone",
+        "wall_max_outward_overhang": 4,
+        "wall_special_max_relief": 3,
+        "wall_special_max_fill_depth": 3,
+        "gate_require_access_before_placement": True,
         "straight_wall_pattern": ["banner", "light", "light"],
         "oblique_wall_pattern": ["light", "light", "light", "banner"],
+        "connect_buildings_to_nearest_road": True,
+        "entrance_corridor_width": 1,
+        "entrance_corridor_extra_outside": 0,
+        "generate_gate_roads": True,
+        "gate_accessibility_check": True,
+        "gate_min_outside_distance": 8,
+        "gate_max_outside_distance": 18,
+        "gate_max_step": 3,
+        "gate_max_relief": 10,
+        "terrain_form_first": False,
+        "same_y_level": True,
+        "organic_blend_width": 20,
+        "cleanup_hanging_vegetation": True,
     },
     "savanna": {
-        "building_total": None,
+        # "Around the same amount as Taiga": 24 normal buildings, distributed
+        # as evenly as possible among every discovered Savanna building type.
+        "building_total": 24,
         "building_ratios": {"*": 1},
+        "building_groups": [],
         "ensure_each_type": True,
-        "building_spacing": 4,
+        "building_spacing": 3,
         "compact_radius": 48,
-        "maximum_radius": 72,
-        "radius_step": 8,
-        "cluster_link_distance": 22,
-        "terrain_score_weight": 0.35,
-        "nearest_building_weight": 11.0,
-        "bounds_growth_weight": 0.20,
-        "landmark_distance_weight": 0.55,
-        "world_safety_cap": 48,
+        "maximum_radius": 68,
+        "radius_step": 4,
+        "cluster_link_distance": 14,
+        "terrain_score_weight": 0.20,
+        "nearest_building_weight": 18.0,
+        "bounds_growth_weight": 0.55,
+        "landmark_distance_weight": 0.80,
+        "building_max_flatten": 9,
+        "relaxed_building_max_flatten": 13,
+        "world_safety_cap": 40,
+        "generate_walls": True,
+        "wall_margin": 6,
         "wall_building_clearance": 1,
+        "wall_fallback_height": 4,
+        "wall_fallback_block": "minecraft:red_sandstone",
+        "wall_max_outward_overhang": 4,
+        "wall_special_max_relief": 3,
+        "wall_special_max_fill_depth": 3,
+        "gate_require_access_before_placement": True,
         "straight_wall_pattern": ["banner", "light", "light"],
         "oblique_wall_pattern": ["light", "light", "light", "banner"],
+        "connect_buildings_to_nearest_road": True,
+        "entrance_corridor_width": 1,
+        "entrance_corridor_extra_outside": 0,
+        "generate_gate_roads": True,
+        "gate_accessibility_check": True,
+        "gate_min_outside_distance": 8,
+        "gate_max_outside_distance": 18,
+        "gate_max_step": 3,
+        "gate_max_relief": 10,
+        "terrain_form_first": False,
+        "same_y_level": True,
+        "organic_blend_width": 20,
+        "cleanup_hanging_vegetation": True,
     },
     "taiga": {
         "building_total": None,
-        "building_ratios": {"*": 1},
-        "ensure_each_type": True,
-        "building_spacing": 4,
+        "building_ratios": {"*": 0},
+        "building_groups": [
+            {
+                "name": "animal_pens",
+                "total": 5,
+                "patterns": ["animalpen", "pigpen", "cowpen", "sheeppen"],
+                "exclude_patterns": ["camel", "horse"],
+            },
+            {"name": "blacksmith", "total": 2, "patterns": ["blacksmith"]},
+            {"name": "farm", "total": 4, "patterns": ["farm"]},
+            {
+                "name": "horse_steed",
+                "total": 3,
+                "patterns": ["horsesteed", "horsestable", "horsepen"],
+            },
+            {"name": "loghouse", "total": 2, "patterns": ["loghouse"]},
+            {"name": "market", "total": 1, "patterns": ["market"]},
+            {"name": "tower", "total": 3, "patterns": ["tower"]},
+            {"name": "well", "total": 2, "patterns": ["well"]},
+            {"name": "witch_house", "total": 2, "patterns": ["witch"]},
+        ],
+        "ensure_each_type": False,
+        "building_spacing": 3,
         "compact_radius": 48,
-        "maximum_radius": 72,
-        "radius_step": 8,
-        "cluster_link_distance": 22,
-        "terrain_score_weight": 0.35,
-        "nearest_building_weight": 11.0,
-        "bounds_growth_weight": 0.20,
-        "landmark_distance_weight": 0.55,
-        "world_safety_cap": 48,
+        "maximum_radius": 68,
+        "radius_step": 4,
+        "cluster_link_distance": 14,
+        "terrain_score_weight": 0.20,
+        "nearest_building_weight": 18.0,
+        "bounds_growth_weight": 0.55,
+        "landmark_distance_weight": 0.80,
+        "building_max_flatten": 9,
+        "relaxed_building_max_flatten": 13,
+        "world_safety_cap": 40,
+        "generate_walls": True,
+        "wall_margin": 6,
         "wall_building_clearance": 1,
+        "wall_fallback_height": 4,
+        "wall_fallback_block": "minecraft:cobblestone",
+        "wall_max_outward_overhang": 4,
+        "wall_special_max_relief": 3,
+        "wall_special_max_fill_depth": 3,
+        "gate_require_access_before_placement": True,
         "straight_wall_pattern": ["banner", "light", "light"],
-        # The current Taiga oblique export has no banner. The loader safely
-        # substitutes its light variant for the unavailable banner entry.
-        "oblique_wall_pattern": ["light", "light", "light", "banner"],
+        # The uploaded Taiga oblique module has no banner variant.
+        "oblique_wall_pattern": ["light", "light", "light"],
+        "connect_buildings_to_nearest_road": True,
+        "entrance_corridor_width": 1,
+        "entrance_corridor_extra_outside": 0,
+        "generate_gate_roads": True,
+        "gate_accessibility_check": True,
+        "gate_min_outside_distance": 8,
+        "gate_max_outside_distance": 18,
+        "gate_max_step": 3,
+        "gate_max_relief": 10,
+        "terrain_form_first": False,
+        "same_y_level": True,
+        "organic_blend_width": 20,
+        "cleanup_hanging_vegetation": True,
     },
 }
 
@@ -10196,6 +10294,7 @@ def run_single_settlement() -> dict:
         )
 
     paths: List[RoadPath] = []
+    entrance_corridor_blocks: List[dict] = []
     if not DISABLE_ROADS and normal_buildings:
         print("Generating roads from the landmark waypoint to building waypoints...")
         paths = build_road_network(
@@ -10209,6 +10308,17 @@ def run_single_settlement() -> dict:
         place_roads(
             blocks, paths, ba, heights, floor_heights, biome_lookup,
             height_overrides, building_cells, water_cells, SEED,
+        )
+        entrance_corridor_blocks = build_v38_entrance_corridor_blocks(
+            V38_ENTRANCE_CORRIDORS,
+            ba,
+            biome_lookup,
+            SEED,
+        )
+        print(
+            f"V38 post-structure entrance corridors queued: "
+            f"{len(V38_ENTRANCE_CORRIDORS)} corridor(s), "
+            f"{len(entrance_corridor_blocks)} block placement(s)."
         )
 
     # V16: walls are genuinely the final construction stage. Their terrain
@@ -10310,6 +10420,17 @@ def run_single_settlement() -> dict:
         )
     ]
     skipped_wall_supports = wall_support_before - len(wall_support_blocks)
+
+    entrance_corridor_before = len(entrance_corridor_blocks)
+    entrance_corridor_blocks = [
+        block for block in entrance_corridor_blocks
+        if in_build_area_xyz(
+            ba, int(block["x"]), int(block["y"]), int(block["z"])
+        )
+    ]
+    skipped_entrance_corridors = (
+        entrance_corridor_before - len(entrance_corridor_blocks)
+    )
 
     if wall_placements and WALL_WARN_IF_NO_BANNERS and not wall_banner_blocks:
         print(
@@ -10414,6 +10535,11 @@ def run_single_settlement() -> dict:
         print(f"Skipped banner placements outside /buildarea: {skipped_wall_banners}")
     if skipped_wall_supports:
         print(f"Skipped wall-support placements outside /buildarea: {skipped_wall_supports}")
+    if skipped_entrance_corridors:
+        print(
+            f"Skipped entrance-corridor placements outside /buildarea: "
+            f"{skipped_entrance_corridors}"
+        )
     if terrain_first_stats:
         print(
             f"Terrain-first pass: {terrain_first_stats.get('columns', 0)} columns, "
@@ -10431,6 +10557,7 @@ def run_single_settlement() -> dict:
     print(f"Final-stage wall support placements: {len(wall_support_blocks)}")
     print(f"Final legacy JSON building block placements: {len(json_blocks)}")
     print(f"Final paired NBT structure placements: {len(nbt_buildings)}")
+    print(f"Final post-structure entrance-corridor placements: {len(entrance_corridor_blocks)}")
     print(f"Final JSON wall placements: {len(wall_json_blocks)}")
     print(f"Final wall banner placements: {len(wall_banner_blocks)}")
     print(
@@ -10439,7 +10566,7 @@ def run_single_settlement() -> dict:
     )
     print(
         f"Total explicit block placements: "
-        f"{len(blocks) + len(json_blocks) + len(wall_support_blocks) + len(wall_json_blocks) + len(wall_banner_blocks)}"
+        f"{len(blocks) + len(json_blocks) + len(entrance_corridor_blocks) + len(wall_support_blocks) + len(wall_json_blocks) + len(wall_banner_blocks)}"
     )
     print(
         f"Additional complete NBT structure placements: {len(nbt_buildings)}"
@@ -10449,6 +10576,7 @@ def run_single_settlement() -> dict:
     total_passes = 1
     total_passes += int(bool(json_blocks))
     total_passes += int(bool(nbt_buildings))
+    total_passes += int(bool(entrance_corridor_blocks))
     total_passes += int(bool(wall_support_blocks))
     total_passes += int(bool(wall_json_blocks))
     total_passes += int(bool(wall_banner_blocks))
@@ -10488,6 +10616,14 @@ def run_single_settlement() -> dict:
                 f"{building.asset.name}"
             )
             place_nbt_building(building)
+        pass_number += 1
+
+    if entrance_corridor_blocks:
+        print(
+            f"Placement pass {pass_number}/{total_passes}: repairing every "
+            "saved entrance corridor after JSON/NBT structures..."
+        )
+        put_blocks(entrance_corridor_blocks, do_block_updates=False)
         pass_number += 1
 
     if wall_support_blocks:
@@ -14021,9 +14157,1659 @@ def plan_settlement_walls(
     )
     return result
 
+
+# ============================================================
+# V38 road-to-entrance fixes
+# - builds a narrow corridor from every saved waypoint to the first cell
+#   outside its real rotated footprint
+# - connects each new structure to the nearest already-planned road cell
+# - reapplies those narrow corridors after JSON/NBT structures so the
+#   structure placement cannot overwrite the final doorway connection
+# ============================================================
+
+V38_ENTRANCE_CORRIDORS: List[dict] = []
+
+
+def _v38_direction_vector(direction: Optional[str]) -> Dir2D:
+    return {
+        "north": (0, -1),
+        "south": (0, 1),
+        "west": (-1, 0),
+        "east": (1, 0),
+    }.get(str(direction or "north").lower(), (0, -1))
+
+
+def _v38_inside_rect(pos: Pos2D, rect: Rect) -> bool:
+    x, z = pos
+    x0, z0, x1, z1 = rect
+    return x0 <= x <= x1 and z0 <= z <= z1
+
+
+def _v38_plot_corridor(plot: Plot, extra_outside: int = 0) -> Optional[dict]:
+    """Return a one-cell centerline from the saved waypoint to open terrain."""
+    if plot.door_pos is None or plot.door_facing is None:
+        return None
+
+    dx, dz = _v38_direction_vector(plot.door_facing)
+    current = (int(plot.door_pos[0]), int(plot.door_pos[1]))
+    cells: List[Pos2D] = []
+    limit = max(
+        8,
+        int(plot.rotated_width or plot.size or 1)
+        + int(plot.rotated_depth or plot.size or 1)
+        + 8,
+    )
+
+    outside_steps = 0
+    for _ in range(limit):
+        if not cells or cells[-1] != current:
+            cells.append(current)
+        if not _v38_inside_rect(current, plot.rect):
+            if outside_steps >= max(0, int(extra_outside)):
+                break
+            outside_steps += 1
+        current = (current[0] + dx, current[1] + dz)
+
+    # Use the exact old projected connection when it lies farther out. This
+    # keeps compatibility with exported waypoints that were already outside.
+    if plot.door_front is not None:
+        target = (int(plot.door_front[0]), int(plot.door_front[1]))
+        if target not in cells:
+            extension = line_2d(cells[-1], target)
+            cells.extend(extension[1:])
+
+    deduped: List[Pos2D] = []
+    for pos in cells:
+        if not deduped or deduped[-1] != pos:
+            deduped.append(pos)
+
+    top_y = (
+        int(plot.entrance_world[1])
+        if plot.entrance_world is not None
+        else int(plot.target_top_y)
+    )
+    name = (
+        plot.asset.name
+        if plot.asset is not None
+        else ("landmark" if plot.kind == "landmark" else "building")
+    )
+    return {
+        "plot": plot,
+        "name": name,
+        "cells": deduped,
+        "outside": deduped[-1],
+        "top_y": top_y,
+        "facing": plot.door_facing,
+    }
+
+
+def _v38_nearest_network_cell(
+    goal: Pos2D,
+    network_cells: Set[Pos2D],
+) -> Pos2D:
+    return min(
+        network_cells,
+        key=lambda p: (
+            abs(p[0] - goal[0]) + abs(p[1] - goal[1]),
+            euclid(p, goal),
+            p[0],
+            p[1],
+        ),
+    )
+
+
+def build_road_network(
+    altar: Plot,
+    houses: Sequence[Plot],
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    floor_heights: Dict[Pos2D, int],
+    height_overrides: Dict[Pos2D, int],
+    seed: int,
+    water_cells: Set[Pos2D],
+    extra_blocked: Optional[Set[Pos2D]] = None,
+) -> List[RoadPath]:
+    """V38: connect structures through their real saved entrance corridors.
+
+    The first road cell is the landmark's outside corridor endpoint. Each next
+    building connects to the nearest cell in the road network already planned,
+    producing a branching village network rather than isolated landmark spokes.
+    """
+    global V38_ENTRANCE_CORRIDORS
+
+    settings = _v37_active_settings()
+    extra_outside = max(
+        0,
+        int(settings.get("entrance_corridor_extra_outside", 0)),
+    )
+    use_nearest_network = bool(
+        settings.get("connect_buildings_to_nearest_road", True)
+    )
+
+    all_plots = [altar] + list(houses)
+    corridors: List[dict] = []
+    for plot in all_plots:
+        corridor = _v38_plot_corridor(plot, extra_outside)
+        if corridor is not None:
+            corridors.append(corridor)
+            plot.door_front = corridor["outside"]
+
+    V38_ENTRANCE_CORRIDORS = corridors
+    corridor_by_plot = {
+        id(corridor["plot"]): corridor
+        for corridor in corridors
+    }
+
+    altar_corridor = corridor_by_plot.get(id(altar))
+    if altar_corridor is None:
+        print("WARNING: V38 could not create the landmark entrance corridor.")
+        return []
+
+    blocked = make_building_blocked_set(all_plots, set())
+    if extra_blocked:
+        blocked.update(extra_blocked)
+
+    network_cells: Set[Pos2D] = {altar_corridor["outside"]}
+    network_y: Dict[Pos2D, int] = {
+        altar_corridor["outside"]: int(altar_corridor["top_y"])
+    }
+    landmark_start = altar_corridor["outside"]
+    pending = [
+        house
+        for house in houses
+        if id(house) in corridor_by_plot
+    ]
+    paths: List[RoadPath] = []
+    total_requested_branches = len(pending)
+    branch_number = 0
+
+    while pending:
+        if use_nearest_network:
+            chosen_house = min(
+                pending,
+                key=lambda house: min(
+                    abs(cell[0] - corridor_by_plot[id(house)]["outside"][0])
+                    + abs(cell[1] - corridor_by_plot[id(house)]["outside"][1])
+                    for cell in network_cells
+                ),
+            )
+        else:
+            chosen_house = pending[0]
+        pending.remove(chosen_house)
+
+        corridor = corridor_by_plot[id(chosen_house)]
+        goal = corridor["outside"]
+        start = (
+            _v38_nearest_network_cell(goal, network_cells)
+            if use_nearest_network
+            else landmark_start
+        )
+        start_y = int(network_y.get(start, altar_corridor["top_y"]))
+        end_y = int(corridor["top_y"])
+
+        local_blocked = set(blocked)
+        local_blocked.discard(start)
+        local_blocked.discard(goal)
+        branch_number += 1
+        cells = astar_path(
+            start,
+            goal,
+            ba,
+            heights,
+            floor_heights,
+            local_blocked,
+            water_cells,
+            height_overrides,
+            seed + branch_number * 137,
+        )
+
+        # A nearby network cell can occasionally be trapped by another
+        # footprint. Retry from the landmark hub before giving up.
+        if len(cells) < 2 and start != landmark_start:
+            retry_blocked = set(blocked)
+            retry_blocked.discard(landmark_start)
+            retry_blocked.discard(goal)
+            cells = astar_path(
+                landmark_start,
+                goal,
+                ba,
+                heights,
+                floor_heights,
+                retry_blocked,
+                water_cells,
+                height_overrides,
+                seed + branch_number * 137 + 61,
+            )
+            if len(cells) >= 2:
+                start = landmark_start
+                start_y = int(altar_corridor["top_y"])
+
+        if len(cells) < 2:
+            print(
+                f"WARNING: V38 could not connect {corridor['name']} to the "
+                "existing road network. Its saved doorway corridor will still "
+                "be repaired, but the external branch is missing."
+            )
+            continue
+
+        branch = RoadPath(
+            cells=cells,
+            start_y=start_y,
+            end_y=end_y,
+            start_name=(
+                "existing_road_network"
+                if start != landmark_start
+                else altar_corridor["name"]
+            ),
+            end_name=corridor["name"],
+        )
+        paths.append(branch)
+
+        branch_tops = smooth_path_tops(
+            cells,
+            heights,
+            height_overrides,
+            start_y,
+            end_y,
+        )
+        for pos, top_y in zip(cells, branch_tops):
+            network_cells.add(pos)
+            network_y[pos] = int(top_y)
+
+        print(
+            f"  V38 road connection: {corridor['name']} entrance "
+            f"{chosen_house.door_pos} -> corridor end {goal} -> nearest road "
+            f"{start}; corridor length={len(corridor['cells'])}, "
+            f"branch length={len(cells)}"
+        )
+
+    print(
+        f"V38 entrance network: {len(V38_ENTRANCE_CORRIDORS)} corridor(s), "
+        f"{len(paths)}/{total_requested_branches} external branch(es) planned."
+    )
+    return paths
+
+
+def build_v38_entrance_corridor_blocks(
+    corridors: Sequence[dict],
+    ba: dict,
+    biome_lookup: Dict[Pos2D, str],
+    seed: int,
+) -> List[dict]:
+    """Build narrow road thresholds that are placed after all structures."""
+    settings = _v37_active_settings()
+    width = max(1, min(3, int(settings.get("entrance_corridor_width", 1))))
+    if width % 2 == 0:
+        width += 1
+
+    queued: "OrderedDict[Tuple[int, int, int], dict]" = OrderedDict()
+    for corridor_index, corridor in enumerate(corridors):
+        cells = list(corridor.get("cells") or [])
+        if not cells:
+            continue
+        top_y = int(corridor.get("top_y", 64))
+        facing = str(corridor.get("facing", "north"))
+        dx, dz = _v38_direction_vector(facing)
+        side = (-dz, dx)
+
+        for cell_index, center in enumerate(cells):
+            for lateral in range(-(width // 2), width // 2 + 1):
+                x = int(center[0] + side[0] * lateral)
+                z = int(center[1] + side[1] * lateral)
+                if not in_build_area_xz(ba, x, z, margin=1):
+                    continue
+                group = road_style_group_at((x, z), biome_lookup)
+                surface = road_block_for(
+                    group,
+                    x,
+                    z,
+                    seed + corridor_index * 977 + cell_index * 17,
+                )
+                support = road_subgrade_block(group)
+
+                # A compact two-block foundation is enough because the
+                # settlement terrain and building pad were already reformed.
+                for y in range(max(ba["y1"], top_y - 2), top_y):
+                    queued[(x, y, z)] = b(support, x, y, z)
+                queued[(x, top_y, z)] = b(surface, x, top_y, z)
+
+    return list(queued.values())
+
+
+# ============================================================
+# V39 overrides
+# - exact total building groups and denser compact settlements
+# - optional walls in the main tribe settings
+# - full per-column wall foundations with no air below modules
+# - biome/module-derived fallback gap walls
+# - inaccessible gates removed and accessible gates connected both ways
+# - floating jungle/biome vegetation removed inside the settlement
+# - same-level buildings with a wider organic terrain transition
+# ============================================================
+
+V39_WALL_GAP_PALETTE: List[str] = ["minecraft:stone_bricks"]
+V39_GATE_ACCESS: List[dict] = []
+V39_WALL_SOLID_XZ: Set[Pos2D] = set()
+V39_GATE_PASSAGE_XZ: Set[Pos2D] = set()
+
+V39_HANGING_VEGETATION_IDS: Set[str] = {
+    "minecraft:vine",
+    "minecraft:cave_vines",
+    "minecraft:cave_vines_plant",
+    "minecraft:weeping_vines",
+    "minecraft:weeping_vines_plant",
+    "minecraft:twisting_vines",
+    "minecraft:twisting_vines_plant",
+    "minecraft:hanging_roots",
+    "minecraft:glow_lichen",
+    "minecraft:spore_blossom",
+    "minecraft:small_dripleaf",
+    "minecraft:big_dripleaf",
+    "minecraft:big_dripleaf_stem",
+    "minecraft:bamboo",
+    "minecraft:bamboo_sapling",
+    "minecraft:cocoa",
+}
+
+
+def _v39_normalized_identifiers(asset: BuildingAsset) -> Set[str]:
+    return {
+        _v37_normalize_asset_key(asset.name),
+        _v37_normalize_asset_key(asset.path.name),
+        _v37_normalize_asset_key(asset.path.stem),
+    }
+
+
+def _v39_group_matches(asset: BuildingAsset, group: Dict[str, Any]) -> bool:
+    identifiers = _v39_normalized_identifiers(asset)
+    patterns = [
+        _v37_normalize_asset_key(value)
+        for value in group.get("patterns", [])
+        if _v37_normalize_asset_key(value)
+    ]
+    excluded = [
+        _v37_normalize_asset_key(value)
+        for value in group.get("exclude_patterns", [])
+        if _v37_normalize_asset_key(value)
+    ]
+    if excluded and any(
+        pattern in identifier
+        for pattern in excluded
+        for identifier in identifiers
+    ):
+        return False
+    return bool(patterns) and any(
+        pattern in identifier
+        for pattern in patterns
+        for identifier in identifiers
+    )
+
+
+_v39_previous_allocate_building_counts = _v37_allocate_building_counts
+
+
+def _v37_allocate_building_counts(
+    assets: Sequence[BuildingAsset],
+    settings: Dict[str, Any],
+) -> Dict[str, int]:
+    """Allocate exact group totals across every matching structure variant."""
+    counts = _v39_previous_allocate_building_counts(assets, settings)
+    groups = list(settings.get("building_groups") or [])
+    if not groups:
+        return counts
+
+    claimed: Set[str] = set()
+    for group_index, raw_group in enumerate(groups):
+        if not isinstance(raw_group, dict):
+            continue
+        group = dict(raw_group)
+        name = str(group.get("name") or f"group_{group_index + 1}")
+        total = max(0, int(group.get("total", 0)))
+        matched = [
+            asset
+            for asset in assets
+            if _v39_group_matches(asset, group)
+        ]
+        if not matched:
+            print(
+                f"WARNING: V39 building group {name!r} matched no JSON/NBT "
+                "building file. Check its patterns in TRIBE_GENERATION_SETTINGS."
+            )
+            continue
+
+        matched.sort(key=lambda asset: asset.path.name)
+        for asset in matched:
+            counts[asset.path.name] = 0
+            claimed.add(asset.path.name)
+
+        # Round-robin allocation makes "5 animal pens total" work even when
+        # several pen variants exist.
+        for copy_index in range(total):
+            asset = matched[copy_index % len(matched)]
+            counts[asset.path.name] += 1
+
+        print(
+            f"V39 building group {name}: total={total}, "
+            + ", ".join(
+                f"{asset.path.name}={counts[asset.path.name]}"
+                for asset in matched
+            )
+        )
+
+    cap = max(0, int(settings.get("world_safety_cap", 0)))
+    requested = sum(counts.values())
+    if cap and requested > cap:
+        print(
+            f"WARNING: requested building groups total {requested}, but "
+            f"world_safety_cap={cap}. Reduce the group counts or raise the cap."
+        )
+    return counts
+
+
+_v39_previous_configure_active_tribe = configure_active_tribe
+
+
+def configure_active_tribe(
+    tribe: str,
+    *,
+    allow_wall_env_override: bool = False,
+) -> None:
+    global GENERATE_WALLS, TERRAIN_FORM_FIRST
+    global BUILDING_MAX_FLATTEN, RELAXED_BUILDING_MAX_FLATTEN
+    global BUILDING_SPACING, MOUNTAIN_PLOT_LEVEL_SPREAD
+    global V32_ORGANIC_BLEND_WIDTH, FINAL_TERRAIN_EDGE_BLEND
+    global FINAL_TERRAIN_BUILDING_PAD_MARGIN
+    global WALL_PERIMETER_MARGIN, WALL_MIN_BUILDING_GAP
+    global WALL_BUILDING_CLEARANCE, WALL_CONNECTION_FILL_HEIGHT
+
+    _v39_previous_configure_active_tribe(
+        tribe,
+        allow_wall_env_override=allow_wall_env_override,
+    )
+    settings = _v37_active_settings(tribe)
+
+    GENERATE_WALLS = bool(settings.get("generate_walls", True))
+    TERRAIN_FORM_FIRST = bool(settings.get("terrain_form_first", False))
+    BUILDING_SPACING = max(1, int(settings.get("building_spacing", 3)))
+    BUILDING_MAX_FLATTEN = max(
+        1, int(settings.get("building_max_flatten", 9))
+    )
+    RELAXED_BUILDING_MAX_FLATTEN = max(
+        BUILDING_MAX_FLATTEN,
+        int(settings.get("relaxed_building_max_flatten", 13)),
+    )
+    MOUNTAIN_PLOT_LEVEL_SPREAD = (
+        0 if bool(settings.get("same_y_level", True)) else 1
+    )
+
+    V32_ORGANIC_BLEND_WIDTH = max(
+        10, int(settings.get("organic_blend_width", 20))
+    )
+    FINAL_TERRAIN_EDGE_BLEND = V32_ORGANIC_BLEND_WIDTH
+    FINAL_TERRAIN_BUILDING_PAD_MARGIN = max(
+        1, int(settings.get("building_pad_margin", 2))
+    )
+
+    WALL_PERIMETER_MARGIN = max(
+        4, int(settings.get("wall_margin", 6))
+    )
+    WALL_MIN_BUILDING_GAP = WALL_PERIMETER_MARGIN
+    WALL_BUILDING_CLEARANCE = max(
+        0, int(settings.get("wall_building_clearance", 1))
+    )
+    WALL_CONNECTION_FILL_HEIGHT = max(
+        2, int(settings.get("wall_fallback_height", 4))
+    )
+
+    print(
+        f"V39 settings for {tribe}: buildings="
+        f"{settings.get('building_total', 'exact groups')}, "
+        f"walls={'ON' if GENERATE_WALLS else 'OFF'}, "
+        f"same-Y={'ON' if MOUNTAIN_PLOT_LEVEL_SPREAD == 0 else 'OFF'}, "
+        f"organic blend={V32_ORGANIC_BLEND_WIDTH}, "
+        f"wall margin={WALL_PERIMETER_MARGIN}."
+    )
+
+
+def _available_world_tribes() -> List[str]:
+    """Do not require a wall library for tribes whose wall toggle is off."""
+    available: List[str] = []
+    for tribe in SUPPORTED_TRIBES:
+        building_dir = BUILDINGS_ROOT / tribe
+        landmark = building_dir / TRIBE_LANDMARK_FILENAMES[tribe]
+        if not building_dir.is_dir():
+            print(
+                f"World planner: skipping {tribe}; folder missing: {building_dir}"
+            )
+            continue
+        if not landmark.is_file():
+            print(
+                f"World planner: skipping {tribe}; landmark missing: {landmark}"
+            )
+            continue
+        settings = _v37_active_settings(tribe)
+        if bool(settings.get("generate_walls", True)):
+            wall_library = _v36_resolve_wall_library_path(tribe)
+            if not wall_library.is_file():
+                print(
+                    f"World planner: skipping {tribe}; wall library missing: "
+                    f"{wall_library}"
+                )
+                continue
+        available.append(tribe)
+    return available
+
+
+def _v39_is_structural_wall_block(block_id: str) -> bool:
+    value = str(block_id).lower()
+    rejected = (
+        "air",
+        "banner",
+        "lantern",
+        "torch",
+        "chain",
+        "iron_bars",
+        "fence",
+        "wall",
+        "stairs",
+        "slab",
+        "trapdoor",
+        "door",
+        "leaves",
+        "vine",
+        "carpet",
+        "sign",
+        "button",
+        "pressure_plate",
+        "flower",
+        "grass",
+    )
+    return value.startswith("minecraft:") and not any(token in value for token in rejected)
+
+
+def _v39_choose_wall_gap_palette(
+    library: Dict[str, List[WallModuleAsset]],
+) -> List[str]:
+    counter: Counter[str] = Counter()
+    preferred_assets: List[WallModuleAsset] = []
+    for module_type in ("straight_wall", "oblique_wall", "main_gate"):
+        preferred_assets.extend(library.get(module_type, []))
+
+    for asset in preferred_assets:
+        role = str(getattr(asset, "role", "") or "")
+        if role in {"gap_filler", "oblique_gap_filler"}:
+            continue
+        for entry in asset.blocks:
+            block_id = str(entry.get("id", "minecraft:air"))
+            if _v39_is_structural_wall_block(block_id):
+                counter[block_id] += 1
+
+    if not counter:
+        return [{
+            "desert": "minecraft:sandstone",
+            "savanna": "minecraft:red_sandstone",
+            "taiga": "minecraft:cobblestone",
+            "plains": "minecraft:stone_bricks",
+        }.get(ACTIVE_TRIBE, "minecraft:stone_bricks")]
+
+    return [block_id for block_id, _count in counter.most_common(3)]
+
+
+_v39_previous_load_wall_module_library = load_wall_module_library
+
+
+def load_wall_module_library() -> Dict[str, List[WallModuleAsset]]:
+    global V39_WALL_GAP_PALETTE, WALL_CONNECTION_FILL_HEIGHT
+    library = _v39_previous_load_wall_module_library()
+    if not library:
+        return library
+
+    V39_WALL_GAP_PALETTE = _v39_choose_wall_gap_palette(library)
+    settings = _v37_active_settings()
+    requested_height = max(
+        2, int(settings.get("wall_fallback_height", 4))
+    )
+    normal_assets = [
+        asset
+        for module_type in ("straight_wall", "oblique_wall")
+        for asset in library.get(module_type, [])
+        if getattr(asset, "role", "") not in {"gap_filler", "oblique_gap_filler"}
+    ]
+    if normal_assets:
+        requested_height = min(
+            max(3, min(asset.size_y for asset in normal_assets)),
+            max(requested_height, 5),
+        )
+    WALL_CONNECTION_FILL_HEIGHT = requested_height
+    print(
+        "V39 generator-built wall-gap palette: "
+        + " -> ".join(V39_WALL_GAP_PALETTE)
+        + f"; height={WALL_CONNECTION_FILL_HEIGHT}"
+    )
+    return library
+
+
+def _wall_connection_block() -> str:
+    return (
+        V39_WALL_GAP_PALETTE[0]
+        if V39_WALL_GAP_PALETTE
+        else "minecraft:stone_bricks"
+    )
+
+
+_v39_previous_build_continuous_wall = build_continuous_wall_foundation_and_drain
+
+
+def build_continuous_wall_foundation_and_drain(
+    plots: Sequence[Plot],
+    placements: Sequence[WallPlacement],
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    floor_heights: Dict[Pos2D, int],
+    water_cells: Set[Pos2D],
+) -> Tuple[List[dict], List[dict], Dict[str, int]]:
+    """Use the active module palette when a decorative module cannot fit."""
+    drain, foundation, stats = _v39_previous_build_continuous_wall(
+        plots,
+        placements,
+        ba,
+        heights,
+        floor_heights,
+        water_cells,
+    )
+    primary = _wall_connection_block()
+    palette = V39_WALL_GAP_PALETTE or [primary]
+    for block in foundation:
+        if str(block.get("id")) != primary:
+            continue
+        index = (
+            abs(int(block["x"]) * 31)
+            + abs(int(block["z"]) * 17)
+            + int(block["y"])
+        ) % len(palette)
+        block["id"] = palette[index]
+    stats["generator_gap_palette_blocks"] = sum(
+        1 for block in foundation if str(block.get("id")) in set(palette)
+    )
+    return drain, foundation, stats
+
+
+def prepare_wall_supports(
+    blocks: List[dict],
+    placements: Sequence[WallPlacement],
+    heights: Dict[Pos2D, int],
+    floor_heights: Dict[Pos2D, int],
+    ba: dict,
+    water_cells: Set[Pos2D],
+) -> int:
+    """Fill to the lowest solid block in EVERY module column.
+
+    Older versions supported only the shared exported ground_y. Decorative
+    columns whose first block was higher than ground_y therefore had visible air
+    below them. V39 uses the actual transformed lowest block of each column.
+    """
+    prepared: Set[Tuple[int, int, int]] = set()
+    fill_block = _wall_ground_fill_block()
+
+    for placement in placements:
+        world_columns = wall_module_world_columns(
+            placement.asset,
+            placement.world_pivot,
+            placement.rotation,
+        )
+        for (x, z), lowest_solid_y in world_columns.items():
+            if not in_build_area_xz(ba, x, z):
+                continue
+            key = (x, lowest_solid_y, z)
+            if key in prepared:
+                continue
+            prepared.add(key)
+
+            support_top = lowest_solid_y - 1
+            if (x, z) in water_cells:
+                existing_top = (
+                    floor_heights.get(
+                        (x, z),
+                        heights.get((x, z), support_top + 1),
+                    )
+                    - 1
+                )
+            else:
+                existing_top = surface_top_y((x, z), heights)
+
+            # Fill the full visible air gap and reinforce the top foundation
+            # depth, even when a shallow cave exists directly below the surface.
+            fill_start = min(
+                existing_top + 1,
+                support_top - WALL_FOUNDATION_DEPTH + 1,
+            )
+            fill_start = max(ba["y1"], fill_start)
+            for y in range(fill_start, support_top + 1):
+                if in_build_area_xyz(ba, x, y, z):
+                    blocks.append(b(fill_block, x, y, z))
+
+            clear_start = lowest_solid_y + placement.asset.size_y
+            clear_end = min(ba["y2"], clear_start + 2)
+            for y in range(clear_start, clear_end + 1):
+                if in_build_area_xyz(ba, x, y, z):
+                    blocks.append(b("air", x, y, z))
+
+        if (
+            placement.seam_previous_world is not None
+            and placement.start_connector_world is not None
+        ):
+            previous = placement.seam_previous_world
+            current = placement.start_connector_world
+            for x, z in line_2d(
+                (previous[0], previous[2]),
+                (current[0], current[2]),
+            ):
+                low_y = min(previous[1], current[1])
+                high_y = max(previous[1], current[1])
+                for y in range(low_y, high_y + 1):
+                    if in_build_area_xyz(ba, x, y, z):
+                        blocks.append(b(WALL_SEAM_FILL_BLOCK, x, y, z))
+                for y in range(
+                    max(ba["y1"], low_y - WALL_FOUNDATION_DEPTH),
+                    low_y,
+                ):
+                    blocks.append(b(fill_block, x, y, z))
+
+    return len(prepared)
+
+
+_v39_previous_best_wall_placement = _v36_best_asset_placement
+
+
+def _v36_best_asset_placement(
+    asset: WallModuleAsset,
+    side_name: str,
+    current: Tuple[int, int, int],
+    target: Pos2D,
+    desired_direction: Dir2D,
+    remaining: int,
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    water_blocked: Set[Pos2D],
+    building_rects: Sequence[Rect],
+    occupied_wall_xz: Set[Pos2D],
+    protected_gate_passage_xz: Set[Pos2D],
+    outward_facing: Optional[Any],
+    exact_progress: Optional[int] = None,
+) -> Optional[Tuple[float, WallPlacement, Set[Pos2D], int]]:
+    """Reject modules that would visibly protrude outside the contour.
+
+    A rejected module is left for the regular filler or generator-built palette
+    wall instead of being forced into a disconnected outside position.
+    """
+    result = _v39_previous_best_wall_placement(
+        asset,
+        side_name,
+        current,
+        target,
+        desired_direction,
+        remaining,
+        ba,
+        heights,
+        water_blocked,
+        building_rects,
+        occupied_wall_xz,
+        protected_gate_passage_xz,
+        outward_facing,
+        exact_progress,
+    )
+    if result is None or outward_facing is None:
+        return result
+
+    try:
+        if isinstance(outward_facing, str):
+            outward = facing_to_vec(outward_facing)
+        else:
+            outward = (
+                int(outward_facing[0]),
+                int(outward_facing[1]),
+            )
+    except Exception:
+        outward = None
+    if outward is None:
+        return result
+
+    limit = max(
+        1, int(_v37_active_settings().get("wall_max_outward_overhang", 3))
+    )
+    _score, _placement, solid_xz, _progress = result
+    maximum_outward = max(
+        (
+            (x - current[0]) * outward[0]
+            + (z - current[2]) * outward[1]
+        )
+        for x, z in solid_xz
+    )
+    if maximum_outward > limit:
+        print(
+            f"  V39 rejected {asset.name} on {side_name}: "
+            f"outward protrusion={maximum_outward} > {limit}; "
+            "the remaining gap will use a filler/generator wall."
+        )
+        return None
+    return result
+
+
+def _v39_gate_access_target(
+    waypoint: dict,
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    blocked: Set[Pos2D],
+) -> Optional[Pos2D]:
+    settings = _v37_active_settings()
+    wx, _wy, wz = waypoint["world_pos"]
+    start = (int(wx), int(wz))
+    # Wall-library gate waypoints face OUTWARD from the settlement.
+    outward = facing_to_vec(str(waypoint.get("direction", "north")))
+    side = (-outward[1], outward[0])
+
+    minimum = max(5, int(settings.get("gate_min_outside_distance", 8)))
+    maximum = max(minimum, int(settings.get("gate_max_outside_distance", 18)))
+    max_step = max(1, int(settings.get("gate_max_step", 3)))
+    max_relief = max(max_step, int(settings.get("gate_max_relief", 10)))
+
+    lateral_offsets = [0]
+    for distance in range(minimum, maximum + 1):
+        for lateral in lateral_offsets:
+            target = (
+                start[0] + outward[0] * distance + side[0] * lateral,
+                start[1] + outward[1] * distance + side[1] * lateral,
+            )
+            line = line_2d(start, target)
+            if any(
+                not in_build_area_xz(ba, x, z, margin=2)
+                or (x, z) not in heights
+                or ((x, z) in blocked and (x, z) != start)
+                for x, z in line
+            ):
+                continue
+            tops = [surface_top_y(point, heights) for point in line]
+            if not tops:
+                continue
+            if max(tops) - min(tops) > max_relief:
+                continue
+            if any(
+                abs(tops[index] - tops[index - 1]) > max_step
+                for index in range(1, len(tops))
+            ):
+                continue
+            return target
+    return None
+
+
+_v39_previous_plan_settlement_walls = plan_settlement_walls
+
+
+def plan_settlement_walls(
+    plots: Sequence[Plot],
+    wall_library: Dict[str, List[WallModuleAsset]],
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    water_cells: Set[Pos2D],
+    water_blocked: Set[Pos2D],
+    seed: int,
+) -> Tuple[List[WallPlacement], Dict[str, str], List[dict], Optional[Rect]]:
+    global V39_GATE_ACCESS, V39_WALL_SOLID_XZ, V39_GATE_PASSAGE_XZ
+    result = _v39_previous_plan_settlement_walls(
+        plots,
+        wall_library,
+        ba,
+        heights,
+        water_cells,
+        water_blocked,
+        seed,
+    )
+    placements, status, gate_waypoints, perimeter = result
+    if not placements:
+        V39_GATE_ACCESS = []
+        V39_WALL_SOLID_XZ = set()
+        V39_GATE_PASSAGE_XZ = set()
+        return result
+
+    settings = _v37_active_settings()
+    check_access = bool(settings.get("gate_accessibility_check", True))
+    combined_blocked = set(water_cells) | set(water_blocked)
+    accepted: List[WallPlacement] = []
+    accepted_gate_info: List[dict] = []
+    removed_sides: Set[str] = set()
+
+    for placement in placements:
+        if placement.asset.module_type != "main_gate":
+            accepted.append(placement)
+            continue
+        waypoints = gate_world_waypoints(placement)
+        waypoint = waypoints[0] if waypoints else None
+        target = (
+            _v39_gate_access_target(waypoint, ba, heights, combined_blocked)
+            if waypoint is not None and check_access
+            else (
+                (
+                    int(waypoint["world_pos"][0]),
+                    int(waypoint["world_pos"][2]),
+                )
+                if waypoint is not None
+                else None
+            )
+        )
+        if waypoint is None or target is None:
+            removed_sides.add(placement.side)
+            print(
+                f"V39 removed the {placement.side} gate because no safe "
+                "outside road approach was available. The continuous palette "
+                "wall will close that gap."
+            )
+            continue
+        accepted.append(placement)
+        accepted_gate_info.append(
+            {
+                "placement": placement,
+                "waypoint": waypoint,
+                "outside_target": target,
+            }
+        )
+
+    accepted_gate_ids = {
+        id(info["placement"]) for info in accepted_gate_info
+    }
+    filtered_waypoints: List[dict] = []
+    for placement in accepted:
+        if placement.asset.module_type == "main_gate" and id(placement) in accepted_gate_ids:
+            filtered_waypoints.extend(gate_world_waypoints(placement))
+
+    for side in removed_sides:
+        status[side] = (
+            "GENERATED WITHOUT GATE — outside terrain was inaccessible; "
+            "gap closed by generator-built wall"
+        )
+
+    V39_GATE_ACCESS = accepted_gate_info
+    V39_WALL_SOLID_XZ = set()
+    V39_GATE_PASSAGE_XZ = set()
+    for placement in accepted:
+        V39_WALL_SOLID_XZ.update(
+            wall_module_solid_xz(
+                placement.asset,
+                placement.world_pivot,
+                placement.rotation,
+            )
+        )
+        if placement.asset.module_type == "main_gate":
+            for x, z in _gate_passage_world_xz(placement):
+                for ox in range(-2, 3):
+                    for oz in range(-2, 3):
+                        V39_GATE_PASSAGE_XZ.add((x + ox, z + oz))
+
+    print(
+        f"V39 accessible gates: {len(V39_GATE_ACCESS)}; "
+        f"removed inaccessible gates: {len(removed_sides)}."
+    )
+    return accepted, status, filtered_waypoints, perimeter
+
+
+_v39_previous_build_road_network = build_road_network
+
+
+def build_road_network(
+    altar: Plot,
+    houses: Sequence[Plot],
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    floor_heights: Dict[Pos2D, int],
+    height_overrides: Dict[Pos2D, int],
+    seed: int,
+    water_cells: Set[Pos2D],
+    extra_blocked: Optional[Set[Pos2D]] = None,
+) -> List[RoadPath]:
+    """Add an inward road and terrain-reformed outward road for every safe gate."""
+    paths = _v39_previous_build_road_network(
+        altar,
+        houses,
+        ba,
+        heights,
+        floor_heights,
+        height_overrides,
+        seed,
+        water_cells,
+        extra_blocked,
+    )
+    if (
+        not bool(_v37_active_settings().get("generate_gate_roads", True))
+        or not V39_GATE_ACCESS
+    ):
+        return paths
+
+    network_cells: Set[Pos2D] = set()
+    network_y: Dict[Pos2D, int] = {}
+    for road_path in paths:
+        tops = smooth_path_tops(
+            road_path.cells,
+            heights,
+            height_overrides,
+            road_path.start_y,
+            road_path.end_y,
+        )
+        for point, top_y in zip(road_path.cells, tops):
+            network_cells.add(point)
+            network_y[point] = int(top_y)
+
+    if not network_cells and V38_ENTRANCE_CORRIDORS:
+        landmark_corridor = V38_ENTRANCE_CORRIDORS[0]
+        for point in landmark_corridor.get("cells", []):
+            network_cells.add(point)
+            network_y[point] = int(landmark_corridor.get("top_y", altar.target_top_y))
+
+    building_blocked = make_building_blocked_set([altar] + list(houses), set())
+    common_blocked = set(building_blocked)
+    if extra_blocked:
+        common_blocked.update(extra_blocked)
+    common_blocked.update(V39_WALL_SOLID_XZ - V39_GATE_PASSAGE_XZ)
+
+    for gate_index, info in enumerate(V39_GATE_ACCESS, 1):
+        waypoint = info["waypoint"]
+        gx, gy, gz = waypoint["world_pos"]
+        gate = (int(gx), int(gz))
+        gate_y = int(gy)
+        outside_target = tuple(info["outside_target"])
+
+        if network_cells:
+            nearest = min(
+                network_cells,
+                key=lambda point: (
+                    manhattan(point, gate),
+                    euclid(point, gate),
+                ),
+            )
+            local_blocked = set(common_blocked)
+            local_blocked.discard(gate)
+            local_blocked.discard(nearest)
+            local_blocked -= V39_GATE_PASSAGE_XZ
+            inward_cells = astar_path(
+                gate,
+                nearest,
+                ba,
+                heights,
+                floor_heights,
+                local_blocked,
+                water_cells,
+                height_overrides,
+                seed + gate_index * 1709,
+            )
+            if len(inward_cells) >= 2:
+                inward = RoadPath(
+                    cells=inward_cells,
+                    start_y=gate_y,
+                    end_y=int(network_y.get(nearest, surface_top_y(nearest, heights))),
+                    start_name=f"{waypoint['side']}_gate",
+                    end_name="nearest_internal_road",
+                )
+                paths.append(inward)
+                tops = smooth_path_tops(
+                    inward.cells,
+                    heights,
+                    height_overrides,
+                    inward.start_y,
+                    inward.end_y,
+                )
+                for point, top_y in zip(inward.cells, tops):
+                    network_cells.add(point)
+                    network_y[point] = int(top_y)
+            else:
+                print(
+                    f"WARNING: V39 could not connect the {waypoint['side']} "
+                    "gate to the internal road network."
+                )
+
+        outside_cells = line_2d(gate, outside_target)
+        outside_end_y = surface_top_y(outside_target, heights)
+        if len(outside_cells) >= 2:
+            paths.append(
+                RoadPath(
+                    cells=outside_cells,
+                    start_y=gate_y,
+                    end_y=outside_end_y,
+                    start_name=f"{waypoint['side']}_gate",
+                    end_name="outside_terrain",
+                )
+            )
+            print(
+                f"V39 gate road: {waypoint['side']} gate {gate} -> "
+                f"outside {outside_target}, length={len(outside_cells)}."
+            )
+
+    return paths
+
+
+def _v39_cleanup_hanging_vegetation(
+    plots: Sequence[Plot],
+    ba: dict,
+    heights: Dict[Pos2D, int],
+) -> int:
+    if not plots or not bool(
+        _v37_active_settings().get("cleanup_hanging_vegetation", True)
+    ):
+        return 0
+
+    vertices = _octilinear_contour_vertices(plots, ba)
+    min_x = max(ba["x1"], min(x for x, _ in vertices) - 2)
+    max_x = min(ba["x2"], max(x for x, _ in vertices) + 2)
+    min_z = max(ba["z1"], min(z for _, z in vertices) - 2)
+    max_z = min(ba["z2"], max(z for _, z in vertices) + 2)
+    min_y = max(ba["y1"], min(plot.target_top_y for plot in plots) - 2)
+    visible = [
+        heights[pos] - 1
+        for pos in heights
+        if min_x <= pos[0] <= max_x and min_z <= pos[1] <= max_z
+    ]
+    max_y = min(
+        ba["y2"],
+        (max(visible) if visible else max(plot.target_top_y for plot in plots)) + 40,
+    )
+
+    removals: List[dict] = []
+    tile = max(12, min(24, TERRAIN_DAMAGED_TREE_BLOCK_TILE))
+    for x0 in range(min_x, max_x + 1, tile):
+        x1 = min(max_x, x0 + tile - 1)
+        for z0 in range(min_z, max_z + 1, tile):
+            z1 = min(max_z, z0 + tile - 1)
+            for y0 in range(min_y, max_y + 1, tile):
+                y1 = min(max_y, y0 + tile - 1)
+                data = http_get(
+                    "/blocks",
+                    params={
+                        "x": x0,
+                        "y": y0,
+                        "z": z0,
+                        "dx": x1 - x0 + 1,
+                        "dy": y1 - y0 + 1,
+                        "dz": z1 - z0 + 1,
+                        "dimension": DIMENSION,
+                        "withinBuildArea": str(WITHIN_BUILD_AREA_READS).lower(),
+                    },
+                )
+                entries = data.get("blocks", []) if isinstance(data, dict) else data
+                for entry in entries:
+                    block_id = str(entry.get("id", ""))
+                    if block_id not in V39_HANGING_VEGETATION_IDS:
+                        continue
+                    x = int(entry["x"])
+                    y = int(entry["y"])
+                    z = int(entry["z"])
+                    point = (x + 0.5, z + 0.5)
+                    if (
+                        _point_in_polygon(point, vertices)
+                        or _v32_polygon_edge_distance(point, vertices) <= 2.0
+                    ):
+                        removals.append(b("air", x, y, z))
+
+    if removals:
+        print(
+            f"V39 floating/hanging vegetation cleanup: "
+            f"removing {len(removals)} block(s)."
+        )
+        put_blocks(removals, do_block_updates=False)
+    else:
+        print("V39 floating/hanging vegetation cleanup: none found.")
+    return len(removals)
+
+
+_v39_previous_final_terrain_conform = run_final_structure_terrain_conform
+
+
+def run_final_structure_terrain_conform(
+    plots: Sequence[Plot],
+    settlement_grade: int,
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    floor_heights: Dict[Pos2D, int],
+    water_cells: Set[Pos2D],
+    water_blocked: Set[Pos2D],
+    biome_lookup: Dict[Pos2D, str],
+    biome_forbidden: Set[Pos2D],
+) -> Tuple[
+    Dict[Pos2D, int],
+    Dict[Pos2D, int],
+    Set[Pos2D],
+    Set[Pos2D],
+    dict,
+]:
+    result = _v39_previous_final_terrain_conform(
+        plots,
+        settlement_grade,
+        ba,
+        heights,
+        floor_heights,
+        water_cells,
+        water_blocked,
+        biome_lookup,
+        biome_forbidden,
+    )
+    refreshed_heights = result[0]
+    try:
+        removed = _v39_cleanup_hanging_vegetation(
+            plots,
+            ba,
+            refreshed_heights,
+        )
+        result[4]["hanging_vegetation_removed"] = removed
+    except Exception as exc:
+        print(f"WARNING: V39 vegetation cleanup failed: {exc}")
+    return result
+
+
+# ============================================================
+# V40 Savanna wall fixes
+# - gate outside direction comes from the placed module front, not the
+#   building-road waypoint direction
+# - gates are accepted only when an outside approach is valid before wall chains
+#   are generated
+# - towers/gates are rejected on steep footprints instead of receiving giant
+#   vertical dirt pedestals
+# - generator-built wall gaps use one tribe-specific structural block instead
+#   of a checkerboard palette
+# ============================================================
+
+_v40_previous_gate_world_waypoints = gate_world_waypoints
+
+
+def gate_world_waypoints(placement: WallPlacement) -> List[dict]:
+    """Add the module's true outward direction to every gate waypoint.
+
+    A gate waypoint normally points toward the settlement road. V39 mistakenly
+    treated that direction as outward, which could reject a valid Savanna gate
+    and then close its opening with the fallback wall.
+    """
+    results = _v40_previous_gate_world_waypoints(placement)
+    outward_vector = _asset_visible_front_vector(
+        placement.asset,
+        placement.rotation,
+    )
+    outward_direction = facing_from_dir(outward_vector)
+    for result in results:
+        result["outward_direction"] = outward_direction
+    return results
+
+
+def _v39_gate_access_target(
+    waypoint: dict,
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    blocked: Set[Pos2D],
+) -> Optional[Pos2D]:
+    """Find a safe outside road target using the gate module's real front."""
+    settings = _v37_active_settings()
+    wx, _wy, wz = waypoint["world_pos"]
+    start = (int(wx), int(wz))
+
+    outward_name = str(
+        waypoint.get("outward_direction")
+        or waypoint.get("direction")
+        or "north"
+    )
+    outward = facing_to_vec(outward_name)
+    side = (-outward[1], outward[0])
+
+    minimum = max(5, int(settings.get("gate_min_outside_distance", 8)))
+    maximum = max(minimum, int(settings.get("gate_max_outside_distance", 18)))
+    max_step = max(1, int(settings.get("gate_max_step", 3)))
+    max_relief = max(max_step, int(settings.get("gate_max_relief", 10)))
+
+    # Try the center line first, then small lateral alternatives. This lets a
+    # gate avoid one rock/tree column without moving the gate itself.
+    lateral_offsets = [0, -1, 1, -2, 2, -3, 3]
+    for distance in range(minimum, maximum + 1):
+        for lateral in lateral_offsets:
+            target = (
+                start[0] + outward[0] * distance + side[0] * lateral,
+                start[1] + outward[1] * distance + side[1] * lateral,
+            )
+            line = line_2d(start, target)
+            if any(
+                not in_build_area_xz(ba, x, z, margin=2)
+                or (x, z) not in heights
+                or ((x, z) in blocked and (x, z) != start)
+                for x, z in line
+            ):
+                continue
+            tops = [surface_top_y(point, heights) for point in line]
+            if not tops:
+                continue
+            if max(tops) - min(tops) > max_relief:
+                continue
+            if any(
+                abs(tops[index] - tops[index - 1]) > max_step
+                for index in range(1, len(tops))
+            ):
+                continue
+            return target
+    return None
+
+
+def _v40_wall_terrain_profile(
+    asset: WallModuleAsset,
+    pivot_x: int,
+    pivot_z: int,
+    rotation: int,
+    heights: Dict[Pos2D, int],
+) -> Optional[Tuple[int, int, int]]:
+    """Return minimum, maximum, and relief beneath a module footprint."""
+    footprint = wall_module_solid_xz(
+        asset,
+        (int(pivot_x), 0, int(pivot_z)),
+        rotation,
+    )
+    tops = [
+        surface_top_y(point, heights)
+        for point in footprint
+        if point in heights
+    ]
+    if len(tops) != len(footprint) or not tops:
+        return None
+    return min(tops), max(tops), max(tops) - min(tops)
+
+
+def _v40_special_module_ground_y(
+    asset: WallModuleAsset,
+    pivot_x: int,
+    pivot_z: int,
+    rotation: int,
+    heights: Dict[Pos2D, int],
+) -> Optional[int]:
+    """Choose a safe ground level for gates/towers or reject the footprint."""
+    profile = _v40_wall_terrain_profile(
+        asset,
+        pivot_x,
+        pivot_z,
+        rotation,
+        heights,
+    )
+    if profile is None:
+        return None
+
+    minimum, maximum, relief = profile
+    settings = _v37_active_settings()
+    max_relief = max(0, int(settings.get("wall_special_max_relief", 3)))
+    max_fill = max(0, int(settings.get("wall_special_max_fill_depth", 3)))
+
+    if relief > max_relief or maximum - minimum > max_fill:
+        return None
+    return maximum
+
+
+def choose_gate_placement(
+    side: WallSide,
+    gate_assets: Sequence[WallModuleAsset],
+    corner_clearance: int,
+    side_ground_y: int,
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    water_blocked: Set[Pos2D],
+    building_rects: Sequence[Rect],
+    occupied_wall_xz: Set[Pos2D],
+    seed: int,
+    outward_facing: Optional[str] = None,
+) -> Optional[Tuple[WallPlacement, Set[Pos2D]]]:
+    """Select a flat, externally accessible gate before building wall chains."""
+    del side_ground_y
+    length = wall_side_length(side)
+    usable_start = max(1, corner_clearance)
+    usable_end = length - max(1, corner_clearance)
+    if usable_end - usable_start < 5:
+        return None
+
+    settings = _v37_active_settings()
+    require_access = bool(
+        settings.get("gate_require_access_before_placement", True)
+    )
+    rng = random.Random(seed + sum(ord(c) for c in side.name) * 997)
+    distances = list(range(usable_start, usable_end + 1))
+    rng.shuffle(distances)
+
+    preferred_low = int(
+        usable_start
+        + (usable_end - usable_start) * WALL_GATE_MIN_FRACTION
+    )
+    preferred_high = int(
+        usable_start
+        + (usable_end - usable_start) * WALL_GATE_MAX_FRACTION
+    )
+    distances.sort(
+        key=lambda value: (
+            0 if preferred_low <= value <= preferred_high else 1,
+            rng.random(),
+        )
+    )
+
+    attempts = 0
+    rejected_terrain = 0
+    rejected_access = 0
+
+    for target_distance in distances:
+        if attempts >= WALL_GATE_POSITION_ATTEMPTS:
+            break
+        attempts += 1
+        target_x, target_z = wall_side_point(side, target_distance)
+
+        randomized_assets = list(gate_assets)
+        rng.shuffle(randomized_assets)
+        for asset in randomized_assets:
+            options = wall_connector_options(
+                asset,
+                side.direction,
+                outward_facing or side.outward_facing,
+            )
+            for option in options[:12]:
+                (
+                    _alignment_score,
+                    rotation,
+                    start_index,
+                    end_index,
+                    start_offset,
+                    end_offset,
+                ) = option
+
+                midpoint_x = (start_offset[0] + end_offset[0]) / 2.0
+                midpoint_z = (start_offset[2] + end_offset[2]) / 2.0
+                pivot_x = int(round(target_x - midpoint_x))
+                pivot_z = int(round(target_z - midpoint_z))
+
+                target_ground_y = _v40_special_module_ground_y(
+                    asset,
+                    pivot_x,
+                    pivot_z,
+                    rotation,
+                    heights,
+                )
+                if target_ground_y is None:
+                    rejected_terrain += 1
+                    continue
+
+                pivot_y = wall_pivot_y_for_ground(
+                    asset,
+                    target_ground_y,
+                )
+                world_pivot = (pivot_x, pivot_y, pivot_z)
+                start_world = connector_world_from_option(
+                    world_pivot,
+                    start_offset,
+                )
+                end_world = connector_world_from_option(
+                    world_pivot,
+                    end_offset,
+                )
+                placement = WallPlacement(
+                    asset=asset,
+                    side=side.name,
+                    rotation=rotation,
+                    world_pivot=world_pivot,
+                    start_connector_name=str(
+                        asset.connectors[start_index].get("name", "start")
+                    ),
+                    end_connector_name=str(
+                        asset.connectors[end_index].get("name", "end")
+                    ),
+                    start_connector_world=start_world,
+                    end_connector_world=end_world,
+                )
+
+                valid, _terrain_error, solid_xz = wall_placement_is_valid(
+                    asset,
+                    world_pivot,
+                    rotation,
+                    ba,
+                    heights,
+                    water_blocked,
+                    building_rects,
+                    occupied_wall_xz,
+                    WALL_RELAXED_MAX_FLATTEN,
+                )
+                if not valid:
+                    continue
+
+                if require_access:
+                    waypoints = gate_world_waypoints(placement)
+                    waypoint = waypoints[0] if waypoints else None
+                    outside_target = (
+                        _v39_gate_access_target(
+                            waypoint,
+                            ba,
+                            heights,
+                            set(water_blocked),
+                        )
+                        if waypoint is not None
+                        else None
+                    )
+                    if outside_target is None:
+                        rejected_access += 1
+                        continue
+
+                if rejected_terrain or rejected_access:
+                    print(
+                        f"  V40 gate search on {side.name}: "
+                        f"rejected steep={rejected_terrain}, "
+                        f"inaccessible={rejected_access}; selected "
+                        f"{asset.name} at ({pivot_x}, {pivot_z})."
+                    )
+                return placement, solid_xz
+
+    print(
+        f"  V40 no safe gate on {side.name}: "
+        f"steep candidates={rejected_terrain}, "
+        f"inaccessible candidates={rejected_access}."
+    )
+    return None
+
+
+def _place_contour_towers(
+    vertices: Sequence[Pos2D],
+    active_macro_sides: Set[str],
+    tower_assets: Sequence[WallModuleAsset],
+    settlement_center: Pos2D,
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    water_blocked: Set[Pos2D],
+    building_rects: Sequence[Rect],
+    seed: int,
+) -> List[WallPlacement]:
+    """Place towers only on naturally supportable contour vertices."""
+    placements: List[WallPlacement] = []
+    if not tower_assets:
+        return placements
+
+    rng = random.Random(seed + 88001)
+    candidate_vertices = list(vertices)[:WALL_MAX_CONTOUR_TOWERS]
+
+    for index, vertex in enumerate(candidate_vertices):
+        outward = direction_to_facing(
+            vertex[0] - settlement_center[0],
+            vertex[1] - settlement_center[1],
+        )
+        if outward not in active_macro_sides:
+            continue
+
+        assets = list(tower_assets)
+        rng.shuffle(assets)
+        placed = False
+        for asset in assets:
+            rotation = rotation_to_face(asset.base_facing, outward)
+            if rotation not in asset.allowed_rotations:
+                rotation = asset.allowed_rotations[0]
+
+            target_ground_y = _v40_special_module_ground_y(
+                asset,
+                vertex[0],
+                vertex[1],
+                rotation,
+                heights,
+            )
+            if target_ground_y is None:
+                continue
+
+            pivot_y = wall_pivot_y_for_ground(
+                asset,
+                target_ground_y,
+            )
+            world_pivot = (vertex[0], pivot_y, vertex[1])
+            valid, _terrain_error, _solid = wall_placement_is_valid(
+                asset,
+                world_pivot,
+                rotation,
+                ba,
+                heights,
+                water_blocked,
+                building_rects,
+                set(),
+                WALL_RELAXED_MAX_FLATTEN,
+            )
+            if not valid:
+                continue
+
+            placements.append(
+                WallPlacement(
+                    asset=asset,
+                    side=f"contour_vertex_{index}",
+                    rotation=rotation,
+                    world_pivot=world_pivot,
+                )
+            )
+            placed = True
+            break
+
+        if not placed:
+            print(
+                f"V40 skipped tower at contour vertex {vertex}: "
+                "terrain was too steep or the footprint did not fit. "
+                "The normal wall/filler closes the corner without a dirt pillar."
+            )
+
+    return placements
+
+
+_v40_previous_choose_wall_gap_palette = _v39_choose_wall_gap_palette
+
+
+def _v39_choose_wall_gap_palette(
+    library: Dict[str, List[WallModuleAsset]],
+) -> List[str]:
+    """Use one stable tribe-specific material for generator-built gaps."""
+    configured = str(
+        _v37_active_settings().get("wall_fallback_block", "")
+    ).strip()
+    if configured:
+        if not configured.startswith("minecraft:"):
+            configured = "minecraft:" + configured
+        return [configured]
+    previous = _v40_previous_choose_wall_gap_palette(library)
+    return previous[:1] if previous else ["minecraft:stone_bricks"]
+
 if __name__ == "__main__":
     main()
 
+# V38: nearest-road entrance corridors reapplied after JSON/NBT structures.
 # V34: post-settlement biome saplings, verified open-space planting, and immediate feature growth.
 # V33: one copy per building type and trunk-component-owned tree clearing.
 # V32: organic terrain mask, complete settlement-tree removal, one-building test mode, and simple connected stone-brick walls.
