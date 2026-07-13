@@ -48,9 +48,6 @@ DIMENSION = "overworld"
 SEED = 20260605
 
 TRIBE_GENERATION_SETTINGS: Dict[str, Dict[str, Any]] = {
-    # Exact-count tribes use building_groups so a count is shared across all
-    # matching JSON/NBT variants. Example: two animal-pen files still produce
-    # five pens TOTAL, not five copies of each file.
     "plains": {
         "building_total": None,
         "building_ratios": {"*": 0},
@@ -95,6 +92,9 @@ TRIBE_GENERATION_SETTINGS: Dict[str, Dict[str, Any]] = {
         "wall_max_outward_overhang": 4,
         "wall_special_max_relief": 3,
         "wall_special_max_fill_depth": 3,
+        "wall_max_support_depth": 3,
+        "gate_passage_width": 3,
+        "gate_passage_height": 3,
         "gate_require_access_before_placement": True,
         "straight_wall_pattern": ["banner", "light", "light"],
         "oblique_wall_pattern": ["light", "light", "light", "banner"],
@@ -152,6 +152,9 @@ TRIBE_GENERATION_SETTINGS: Dict[str, Dict[str, Any]] = {
         "wall_max_outward_overhang": 4,
         "wall_special_max_relief": 3,
         "wall_special_max_fill_depth": 3,
+        "wall_max_support_depth": 3,
+        "gate_passage_width": 3,
+        "gate_passage_height": 3,
         "gate_require_access_before_placement": True,
         "straight_wall_pattern": ["banner", "light", "light"],
         "oblique_wall_pattern": ["light", "light", "light", "banner"],
@@ -170,8 +173,6 @@ TRIBE_GENERATION_SETTINGS: Dict[str, Dict[str, Any]] = {
         "cleanup_hanging_vegetation": True,
     },
     "savanna": {
-        # "Around the same amount as Taiga": 24 normal buildings, distributed
-        # as evenly as possible among every discovered Savanna building type.
         "building_total": 24,
         "building_ratios": {"*": 1},
         "building_groups": [],
@@ -196,6 +197,9 @@ TRIBE_GENERATION_SETTINGS: Dict[str, Dict[str, Any]] = {
         "wall_max_outward_overhang": 4,
         "wall_special_max_relief": 3,
         "wall_special_max_fill_depth": 3,
+        "wall_max_support_depth": 3,
+        "gate_passage_width": 3,
+        "gate_passage_height": 3,
         "gate_require_access_before_placement": True,
         "straight_wall_pattern": ["banner", "light", "light"],
         "oblique_wall_pattern": ["light", "light", "light", "banner"],
@@ -257,9 +261,11 @@ TRIBE_GENERATION_SETTINGS: Dict[str, Dict[str, Any]] = {
         "wall_max_outward_overhang": 4,
         "wall_special_max_relief": 3,
         "wall_special_max_fill_depth": 3,
+        "wall_max_support_depth": 3,
+        "gate_passage_width": 3,
+        "gate_passage_height": 3,
         "gate_require_access_before_placement": True,
         "straight_wall_pattern": ["banner", "light", "light"],
-        # The uploaded Taiga oblique module has no banner variant.
         "oblique_wall_pattern": ["light", "light", "light"],
         "connect_buildings_to_nearest_road": True,
         "entrance_corridor_width": 1,
@@ -277,8 +283,6 @@ TRIBE_GENERATION_SETTINGS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Legacy square-foundation settings are kept only because a few old helper
-# functions still reference them. V11 places real rectangular JSON buildings.
 HOUSE_COUNT = 10
 HOUSE_SIZE_OPTIONS = [7, 8, 9, 10]
 ALTAR_SIZE = 15
@@ -287,13 +291,7 @@ ALTAR_SIZE = 15
 # Landmark placement
 # ---------------------------------------------------------------------------
 
-# This building is unique and becomes the settlement/road-network hub.
 LANDMARK_FILENAME = "plains_gatheringhall.json"
-
-# None means ask every run. At the prompt:
-#   - enter X Z or X Y Z to request a location;
-#   - press Enter to choose a terrain-aware random location.
-# Set a tuple such as (-120, 240) to skip the prompt entirely.
 LANDMARK_CENTER: Optional[Tuple[int, int]] = None
 AUTO_CENTER_LANDMARK = True
 LANDMARK_SEARCH_RADIUS_FROM_REQUEST = 24
@@ -15806,25 +15804,484 @@ def _v39_choose_wall_gap_palette(
     previous = _v40_previous_choose_wall_gap_palette(library)
     return previous[:1] if previous else ["minecraft:stone_bricks"]
 
+
+# ============================================================
+# V41 wall integrity fixes
+# - gate passage air clearing is limited to the actual central opening
+# - a gate accepted by the V40 pre-check is never removed after its chains exist
+# - all wall/tower/gate foundations use tribe wall materials, never dirt/sand
+# - only true ground-contact columns receive supports; decorative overhangs do not
+# - every module is rejected when it would need an excessive visible support
+# - connector seams, especially beside main gates, receive guaranteed structural seals
+# ============================================================
+
+for _v41_settings in TRIBE_GENERATION_SETTINGS.values():
+    _v41_settings.setdefault("wall_max_support_depth", 3)
+    _v41_settings.setdefault("gate_passage_width", 3)
+    _v41_settings.setdefault("gate_passage_height", 3)
+
+
+def _v41_gate_passage_spec(asset: WallModuleAsset) -> Tuple[Tuple[int, int, int], int, int]:
+    """Return local passage center, width, and clear height for one gate."""
+    settings = _v37_active_settings()
+    width = max(1, int(settings.get("gate_passage_width", 3)))
+    if width % 2 == 0:
+        width += 1
+    height = max(2, int(settings.get("gate_passage_height", 3)))
+
+    center = None
+    raw_modules = {
+        str(module.get("name")): module
+        for module in V36_WALL_LIBRARY_METADATA.get("modules", [])
+        if isinstance(module, dict)
+    }
+    raw = raw_modules.get(asset.name, {})
+    passage_meta = raw.get("gate_passage") if isinstance(raw, dict) else None
+    if isinstance(passage_meta, dict):
+        raw_center = passage_meta.get("center")
+        if isinstance(raw_center, list) and len(raw_center) == 3:
+            center = (int(raw_center[0]), int(raw_center[1]), int(raw_center[2]))
+        width = max(1, int(passage_meta.get("width", width)))
+        if width % 2 == 0:
+            width += 1
+        height = max(2, int(passage_meta.get("height", height)))
+
+    if center is None and asset.waypoints:
+        raw_pos = asset.waypoints[0].get("pos", [asset.size_x // 2, 0, asset.size_z // 2])
+        center = (int(raw_pos[0]), int(raw_pos[1]), int(raw_pos[2]))
+    if center is None:
+        center = (asset.size_x // 2, 0, asset.size_z // 2)
+    return center, width, height
+
+
+def _gate_local_clear_entries(asset: WallModuleAsset) -> List[dict]:
+    """Clear only the walk-through opening, never the gate's decorative wings.
+
+    V39 selected almost every exported air block between the two wall connectors.
+    Since this air pass runs after adjacent wall modules, it erased their seam
+    blocks and created the large gate gaps visible in Plains, Taiga, and other
+    tribes. V41 uses a narrow corridor centered on the saved gate waypoint.
+    The road/floor layer (local Y=0) is preserved.
+    """
+    if asset.module_type != "main_gate" or len(asset.connectors) < 2:
+        return []
+
+    center, width, clear_height = _v41_gate_passage_spec(asset)
+    cx, cy, cz = center
+    first = asset.connectors[0].get("pos", [0, 0, 0])
+    second = asset.connectors[1].get("pos", [1, 0, 0])
+    axis_x = int(second[0]) - int(first[0])
+    axis_z = int(second[2]) - int(first[2])
+    axis_length = math.hypot(axis_x, axis_z)
+    if axis_length <= 0:
+        axis_x, axis_z, axis_length = 1, 0, 1.0
+    unit_x = axis_x / axis_length
+    unit_z = axis_z / axis_length
+    half_width = width // 2
+
+    selected: List[dict] = []
+    for entry in asset.blocks:
+        if str(entry.get("id", "")) not in AIR_IDS:
+            continue
+        local = entry.get("pos", [0, 0, 0])
+        lx, ly, lz = int(local[0]), int(local[1]), int(local[2])
+
+        # Keep the existing road/floor surface. Only headroom is cleared.
+        if ly < cy + 1 or ly > cy + clear_height:
+            continue
+
+        # Lateral distance along the wall axis from the saved gate center.
+        lateral = abs((lx - cx) * unit_x + (lz - cz) * unit_z)
+        if lateral > half_width + 0.01:
+            continue
+        selected.append(entry)
+
+    return selected
+
+
+def _v41_local_base_columns(asset: WallModuleAsset) -> Dict[Tuple[int, int], Tuple[int, str]]:
+    """Return only columns whose first solid block actually touches the base."""
+    columns: Dict[Tuple[int, int], List[Tuple[int, str]]] = {}
+    for entry in asset.blocks:
+        block_id = str(entry.get("id", "minecraft:air"))
+        if block_id in AIR_IDS:
+            continue
+        local = entry.get("pos", [0, 0, 0])
+        lx, ly, lz = int(local[0]), int(local[1]), int(local[2])
+        columns.setdefault((lx, lz), []).append((ly, block_id))
+
+    # In the current libraries ground_y=-1 and real base blocks start at Y=0.
+    # Using ground_y+1 works for that convention and remains exporter-friendly.
+    base_limit = max(asset.min_non_air_y, asset.ground_y + 1)
+    result: Dict[Tuple[int, int], Tuple[int, str]] = {}
+    for key, values in columns.items():
+        values.sort(key=lambda item: item[0])
+        lowest_y, lowest_id = values[0]
+        if lowest_y <= base_limit:
+            result[key] = (lowest_y, lowest_id)
+    return result
+
+
+def _v41_world_base_columns(placement: WallPlacement) -> Dict[Pos2D, Tuple[int, str]]:
+    columns: Dict[Pos2D, Tuple[int, str]] = {}
+    for (lx, lz), (local_y, block_id) in _v41_local_base_columns(placement.asset).items():
+        wx, wy, wz = wall_world_position((lx, local_y, lz), placement)
+        key = (wx, wz)
+        previous = columns.get(key)
+        if previous is None or wy < previous[0]:
+            columns[key] = (wy, block_id)
+    return columns
+
+
+def _v41_support_block() -> str:
+    configured = str(_v37_active_settings().get("wall_fallback_block", "")).strip()
+    if configured:
+        return configured if configured.startswith("minecraft:") else "minecraft:" + configured
+    return _wall_connection_block()
+
+
+_v41_previous_wall_placement_is_valid = wall_placement_is_valid
+
+
+def wall_placement_is_valid(
+    asset: WallModuleAsset,
+    world_pivot: Tuple[int, int, int],
+    rotation: int,
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    water_blocked: Set[Pos2D],
+    building_rects: Sequence[Rect],
+    occupied_wall_xz: Set[Pos2D],
+    max_flatten: int,
+) -> Tuple[bool, float, Set[Pos2D]]:
+    valid, score, solid_xz = _v41_previous_wall_placement_is_valid(
+        asset,
+        world_pivot,
+        rotation,
+        ba,
+        heights,
+        water_blocked,
+        building_rects,
+        occupied_wall_xz,
+        max_flatten,
+    )
+    if not valid:
+        return valid, score, solid_xz
+
+    placement = WallPlacement(
+        asset=asset,
+        side="",
+        rotation=rotation,
+        world_pivot=world_pivot,
+    )
+    maximum_support = max(
+        0, int(_v37_active_settings().get("wall_max_support_depth", 3))
+    )
+    deepest = 0
+    for pos, (lowest_y, _block_id) in _v41_world_base_columns(placement).items():
+        if pos not in heights:
+            return False, 10**9, solid_xz
+        terrain_top = surface_top_y(pos, heights)
+        support_depth = max(0, (lowest_y - 1) - terrain_top)
+        deepest = max(deepest, support_depth)
+        if support_depth > maximum_support:
+            return False, 10**9, solid_xz
+    return True, score + deepest * 0.5, solid_xz
+
+
+_v41_pre_v39_plan_settlement_walls = _v39_previous_plan_settlement_walls
+
+
+def plan_settlement_walls(
+    plots: Sequence[Plot],
+    wall_library: Dict[str, List[WallModuleAsset]],
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    water_cells: Set[Pos2D],
+    water_blocked: Set[Pos2D],
+    seed: int,
+) -> Tuple[List[WallPlacement], Dict[str, str], List[dict], Optional[Rect]]:
+    """Use V40's access-aware gate selection without removing gates afterward."""
+    global V39_GATE_ACCESS, V39_WALL_SOLID_XZ, V39_GATE_PASSAGE_XZ
+
+    placements, status, _old_waypoints, perimeter = _v41_pre_v39_plan_settlement_walls(
+        plots,
+        wall_library,
+        ba,
+        heights,
+        water_cells,
+        water_blocked,
+        seed,
+    )
+    if not placements:
+        V39_GATE_ACCESS = []
+        V39_WALL_SOLID_XZ = set()
+        V39_GATE_PASSAGE_XZ = set()
+        return placements, status, [], perimeter
+
+    combined_blocked = set(water_cells) | set(water_blocked)
+    gate_waypoints: List[dict] = []
+    gate_access: List[dict] = []
+    for placement in placements:
+        if placement.asset.module_type != "main_gate":
+            continue
+        waypoints = gate_world_waypoints(placement)
+        gate_waypoints.extend(waypoints)
+        if not waypoints:
+            continue
+        waypoint = waypoints[0]
+        target = _v39_gate_access_target(waypoint, ba, heights, combined_blocked)
+        if target is None:
+            # V40 already checked this candidate before the wall chains were
+            # generated. Keep the gate even if a later conservative recheck
+            # cannot reproduce the target; removing it would create a gate-sized gap.
+            wx, _wy, wz = waypoint["world_pos"]
+            outward = facing_to_vec(
+                str(waypoint.get("outward_direction") or "north")
+            )
+            distance = max(5, int(_v37_active_settings().get("gate_min_outside_distance", 8)))
+            fallback = (int(wx) + outward[0] * distance, int(wz) + outward[1] * distance)
+            target = fallback if in_build_area_xz(ba, fallback[0], fallback[1], margin=2) else (int(wx), int(wz))
+            print(
+                f"V41 kept the {placement.side} gate after its successful pre-check; "
+                "the post-check target was unavailable, so no gate-sized wall gap was created."
+            )
+        gate_access.append(
+            {
+                "placement": placement,
+                "waypoint": waypoint,
+                "outside_target": target,
+            }
+        )
+
+    V39_GATE_ACCESS = gate_access
+    V39_WALL_SOLID_XZ = set()
+    V39_GATE_PASSAGE_XZ = set()
+    for placement in placements:
+        V39_WALL_SOLID_XZ.update(
+            wall_module_solid_xz(
+                placement.asset,
+                placement.world_pivot,
+                placement.rotation,
+            )
+        )
+        if placement.asset.module_type == "main_gate":
+            # The central width is already encoded in the narrow V41 clear mask.
+            V39_GATE_PASSAGE_XZ.update(_gate_passage_world_xz(placement))
+
+    print(
+        f"V41 gate integrity: kept {len(gate_access)} prevalidated gate(s); "
+        "post-planning gate removal is disabled."
+    )
+    return placements, status, gate_waypoints, perimeter
+
+
+def _v41_nearest_base_point(
+    placement: WallPlacement,
+    connector: Tuple[int, int, int],
+) -> Optional[Tuple[int, int, int]]:
+    columns = _v41_world_base_columns(placement)
+    if not columns:
+        return None
+    cx, cy, cz = connector
+    candidates = [
+        (max(abs(x - cx), abs(z - cz)), abs(y - cy), x, y, z)
+        for (x, z), (y, _block_id) in columns.items()
+    ]
+    candidates.sort()
+    _distance, _vertical, x, y, z = candidates[0]
+    return x, y, z
+
+
+def _v41_connector_seal_blocks(
+    placements: Sequence[WallPlacement],
+    ba: dict,
+    heights: Dict[Pos2D, int],
+) -> List[dict]:
+    """Seal physical module seams, with extra attention to both gate sides."""
+    support_id = _v41_support_block()
+    passage: Set[Pos2D] = set()
+    for placement in placements:
+        if placement.asset.module_type == "main_gate":
+            passage.update(_gate_passage_world_xz(placement))
+
+    endpoint_groups: Dict[Pos2D, List[Tuple[WallPlacement, Tuple[int, int, int]]]] = {}
+    for placement in placements:
+        for connector in (placement.start_connector_world, placement.end_connector_world):
+            if connector is None:
+                continue
+            endpoint_groups.setdefault((connector[0], connector[2]), []).append(
+                (placement, connector)
+            )
+
+    seams: Dict[Tuple[int, int, int], dict] = {}
+
+    def add_bridge(a: Tuple[int, int, int], c: Tuple[int, int, int]) -> None:
+        line = line_2d((a[0], a[2]), (c[0], c[2]))
+        steps = max(1, len(line) - 1)
+        for index, (x, z) in enumerate(line):
+            if (x, z) in passage or not in_build_area_xz(ba, x, z):
+                continue
+            base_y = int(round(a[1] + (c[1] - a[1]) * index / steps))
+            terrain_top = surface_top_y((x, z), heights)
+            for y in range(max(ba["y1"], terrain_top + 1), base_y):
+                seams[(x, y, z)] = b(support_id, x, y, z)
+            for y in range(
+                base_y,
+                min(ba["y2"], base_y + WALL_CONNECTION_FILL_HEIGHT - 1) + 1,
+            ):
+                seams[(x, y, z)] = b(support_id, x, y, z)
+
+    # Normal shared connector seams.
+    for group in endpoint_groups.values():
+        unique: List[Tuple[WallPlacement, Tuple[int, int, int]]] = []
+        seen_ids: Set[int] = set()
+        for placement, connector in group:
+            if id(placement) in seen_ids:
+                continue
+            seen_ids.add(id(placement))
+            unique.append((placement, connector))
+        if len(unique) < 2:
+            continue
+        points = [
+            point
+            for placement, connector in unique
+            for point in [_v41_nearest_base_point(placement, connector)]
+            if point is not None
+        ]
+        if len(points) >= 2:
+            anchor = points[0]
+            for point in points[1:]:
+                add_bridge(anchor, point)
+
+    # Gate-to-wall fallback when a connector group has only the gate endpoint.
+    non_gate = [p for p in placements if p.asset.module_type != "main_gate"]
+    for gate in [p for p in placements if p.asset.module_type == "main_gate"]:
+        for connector in (gate.start_connector_world, gate.end_connector_world):
+            if connector is None:
+                continue
+            gate_point = _v41_nearest_base_point(gate, connector)
+            if gate_point is None:
+                continue
+            candidates: List[Tuple[int, Tuple[int, int, int]]] = []
+            for placement in non_gate:
+                if placement.side != gate.side:
+                    continue
+                point = _v41_nearest_base_point(placement, connector)
+                if point is None:
+                    continue
+                distance = max(abs(point[0] - connector[0]), abs(point[2] - connector[2]))
+                if distance <= 6:
+                    candidates.append((distance, point))
+            if candidates:
+                candidates.sort(key=lambda item: item[0])
+                add_bridge(gate_point, candidates[0][1])
+
+    return list(seams.values())
+
+
+_v41_previous_build_continuous_wall = build_continuous_wall_foundation_and_drain
+
+
+def build_continuous_wall_foundation_and_drain(
+    plots: Sequence[Plot],
+    placements: Sequence[WallPlacement],
+    ba: dict,
+    heights: Dict[Pos2D, int],
+    floor_heights: Dict[Pos2D, int],
+    water_cells: Set[Pos2D],
+) -> Tuple[List[dict], List[dict], Dict[str, int]]:
+    drain, foundation, stats = _v41_previous_build_continuous_wall(
+        plots,
+        placements,
+        ba,
+        heights,
+        floor_heights,
+        water_cells,
+    )
+    support_id = _v41_support_block()
+
+    # No generated dirt/sand is allowed directly under the wall contour.
+    replaced = 0
+    for block in foundation:
+        if str(block.get("id")) in {
+            "minecraft:dirt",
+            "minecraft:grass_block",
+            "minecraft:sand",
+        }:
+            block["id"] = support_id
+            replaced += 1
+
+    seam_blocks = _v41_connector_seal_blocks(placements, ba, heights)
+    foundation.extend(seam_blocks)
+    stats["v41_ground_blocks_replaced"] = replaced
+    stats["v41_connector_seal_blocks"] = len(seam_blocks)
+    return drain, foundation, stats
+
+
+def prepare_wall_supports(
+    blocks: List[dict],
+    placements: Sequence[WallPlacement],
+    heights: Dict[Pos2D, int],
+    floor_heights: Dict[Pos2D, int],
+    ba: dict,
+    water_cells: Set[Pos2D],
+) -> int:
+    """Support true base columns with wall material; never generate dirt pillars."""
+    support_id = _v41_support_block()
+    prepared: Set[Tuple[int, int, int]] = set()
+
+    for placement in placements:
+        columns = _v41_world_base_columns(placement)
+        for (x, z), (lowest_solid_y, _base_id) in columns.items():
+            if not in_build_area_xz(ba, x, z):
+                continue
+            key = (x, lowest_solid_y, z)
+            if key in prepared:
+                continue
+            prepared.add(key)
+
+            support_top = lowest_solid_y - 1
+            if (x, z) in water_cells:
+                existing_top = floor_heights.get(
+                    (x, z), heights.get((x, z), support_top + 1)
+                ) - 1
+            else:
+                existing_top = surface_top_y((x, z), heights)
+
+            fill_start = min(
+                existing_top + 1,
+                support_top - WALL_FOUNDATION_DEPTH + 1,
+            )
+            for y in range(max(ba["y1"], fill_start), support_top + 1):
+                if in_build_area_xyz(ba, x, y, z):
+                    blocks.append(b(support_id, x, y, z))
+
+            clear_start = lowest_solid_y + placement.asset.size_y
+            clear_end = min(ba["y2"], clear_start + 2)
+            for y in range(clear_start, clear_end + 1):
+                if in_build_area_xyz(ba, x, y, z):
+                    blocks.append(b("air", x, y, z))
+
+        if placement.seam_previous_world is not None and placement.start_connector_world is not None:
+            previous = placement.seam_previous_world
+            current = placement.start_connector_world
+            for x, z in line_2d((previous[0], previous[2]), (current[0], current[2])):
+                low_y = min(previous[1], current[1])
+                high_y = max(previous[1], current[1])
+                for y in range(low_y, high_y + 1):
+                    if in_build_area_xyz(ba, x, y, z):
+                        blocks.append(b(support_id, x, y, z))
+                terrain_top = surface_top_y((x, z), heights)
+                for y in range(max(ba["y1"], terrain_top + 1), low_y):
+                    blocks.append(b(support_id, x, y, z))
+
+    print(
+        f"V41 wall foundations: {len(prepared)} true base column(s), "
+        f"material={support_id}; decorative overhang columns skipped."
+    )
+    return len(prepared)
+
+
 if __name__ == "__main__":
     main()
-
-# V38: nearest-road entrance corridors reapplied after JSON/NBT structures.
-# V34: post-settlement biome saplings, verified open-space planting, and immediate feature growth.
-# V33: one copy per building type and trunk-component-owned tree clearing.
-# V32: organic terrain mask, complete settlement-tree removal, one-building test mode, and simple connected stone-brick walls.
-# V31: structure-aware final terrain lock removes land islands and prevents buried buildings.
-# V30: post-terrain rescan repairs holes/chunks and removes damaged trees beyond the settlement.
-# V28: complete building-intersecting tree removal and exact waypoint-Y road anchors.
-# V27: full water reclamation during terrain formation, solid wall-over-water foundations, and complete damaged-tree removal.
-# V26: full terrain-first formation, deep ravine filling, shallow cave sealing, and refreshed heightmaps before generation.
-
-# V25: unbroken 10-block-offset walls, reclaimed enclosed water, and solid biome road subgrades.
-
-# V24: mountain flattening before generation, grass terraces, unified plot grade, and walls planned on regraded terrain.
-
-# V23: gentle whole-settlement terrain, shallow cuts, cave filling, preserved trees, and no-dig walls.
-
-# V22: 1000x1000 multi-biome world planning with isolated tribe settlements.
-
-# V21: custom villager names, automatic tribe skins, rotation-safe spawning.
